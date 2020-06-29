@@ -1,40 +1,34 @@
-package PterodactylAPI
+package pterodactylGoApi
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
+	jsoniter "github.com/json-iterator/go"
 	"io/ioutil"
 	"net/http"
 	"strconv"
 )
 
-type ParamsData struct {
-	/* ServerHostname = "xxx.example.com" */
-	ServerHostname string
-	/* user SSL or not */
-	ServerSecure bool
+type Client struct {
+	/* ServerHostname = "http://xxx.example.com" */
+	url string
 	/* your application API */
-	ServerPassword string
+	token string
 }
 
-func PterodactylGetHostname(params ParamsData) string {
-	var hostname string
-	if params.ServerSecure {
-		hostname = "https://" + params.ServerHostname
-	} else {
-		hostname = "http://" + params.ServerHostname
+func NewClient(url string, token string) *Client {
+	for stringLen := len(url); url[stringLen-1] == '/'; stringLen -= 1 {
 	}
-	for stringLen := len(hostname); hostname[stringLen-1] == '/'; stringLen -= 1 {
-	}
-	return hostname
+	return &Client{url: url, token: token}
 }
 
-func pterodactylApi(params ParamsData, data interface{}, endPoint string, method string) (string, int) {
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
+
+func (this *Client) api(data interface{}, endPoint string, method string) ([]byte, int) {
 	/* Send requests to pterodactyl panel */
-	url := PterodactylGetHostname(params) + "/api/application/" + endPoint
-	var res string
+	url := this.url + "/api/application/" + endPoint
+	var res []byte
 	var status int
 	if method == "POST" || method == "PATCH" {
 		ujson, err := json.Marshal(data)
@@ -43,22 +37,21 @@ func pterodactylApi(params ParamsData, data interface{}, endPoint string, method
 		}
 		ubody := bytes.NewReader(ujson)
 		req, _ := http.NewRequest(method, url, ubody)
-		req.Header.Set("Authorization", "Bearer "+params.ServerPassword)
+		req.Header.Set("Authorization", "Bearer "+this.token)
 		req.Header.Set("Accept", "Application/vnd.pterodactyl.v1+json")
 		req.ContentLength = int64(len(ujson))
 		req.Header.Set("Content-Type", "application/json")
-
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			panic("cant Do req:" + err.Error())
 		}
 		defer resp.Body.Close()
 		body, _ := ioutil.ReadAll(resp.Body)
-		res = string(body)
+		res = body
 		status = resp.StatusCode
 	} else {
 		req, _ := http.NewRequest(method, url, nil)
-		req.Header.Set("Authorization", "Bearer "+params.ServerPassword)
+		req.Header.Set("Authorization", "Bearer "+this.token)
 		req.Header.Set("Accept", "Application/vnd.pterodactyl.v1+json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -66,51 +59,51 @@ func pterodactylApi(params ParamsData, data interface{}, endPoint string, method
 		}
 		defer resp.Body.Close()
 		body, _ := ioutil.ReadAll(resp.Body)
-		res = string(body)
+		res = body
 		status = resp.StatusCode
 	}
 	return res, status
 }
 
-func PterodactylTestConnection(params ParamsData) {
-	test, _ := pterodactylApi(params, "", "nodes", "GET")
+func (this *Client) TestConnection() {
+	test, _ := this.api("", "nodes", "GET")
 	fmt.Print("PterodactylAPI returns: ", test)
 }
 
-func pterodactylGetUser(params ParamsData, ID interface{}, isExternal bool) (PterodactylUser, bool) {
+func (this *Client) GetUser(ID interface{}, isExternal bool) (User, bool) {
 	var endPoint string
 	if isExternal {
 		endPoint = "users/external/" + ID.(string)
 	} else {
 		endPoint = "users/" + strconv.Itoa(ID.(int))
 	}
-	body, status := pterodactylApi(params, "", endPoint, "GET")
+	body, status := this.api("", endPoint, "GET")
 	if status == 404 || status == 400 {
-		return PterodactylUser{}, false
+		return User{}, false
 	}
 	dec := struct {
-		Object     string          `json:"object"`
-		Attributes PterodactylUser `json:"attributes"`
+		Object     string `json:"object"`
+		Attributes User   `json:"attributes"`
 	}{}
-	if err := json.Unmarshal([]byte(body), &dec); err == nil {
+	if err := json.Unmarshal(body, &dec); err == nil {
 		return dec.Attributes, true
 	}
-	return PterodactylUser{}, false
+	return User{}, false
 }
 
-func PterodactylGetAllUsers(params ParamsData) []PterodactylUser {
-	body, status := pterodactylApi(params, "", "users/", "GET")
+func (this *Client) GetAllUsers() []User {
+	body, status := this.api("", "users/", "GET")
 	if status != 200 {
 		fmt.Print("cant get all users: " + strconv.Itoa(status))
-		return []PterodactylUser{}
+		return []User{}
 	}
 	dec := struct {
 		data []struct {
-			Attributes PterodactylUser `json:"attributes"`
+			Attributes User `json:"attributes"`
 		}
 	}{}
-	var users []PterodactylUser
-	if err := json.Unmarshal([]byte(body), &dec); err == nil {
+	var users []User
+	if err := json.Unmarshal(body, &dec); err == nil {
 		for _, v := range dec.data {
 			users = append(users, v.Attributes)
 		}
@@ -118,104 +111,104 @@ func PterodactylGetAllUsers(params ParamsData) []PterodactylUser {
 	return users
 }
 
-func PterodactylGetNest(data ParamsData, nestID int) PterodactylNest {
-	body, status := pterodactylApi(data, "", "nests/"+strconv.Itoa(nestID), "GET")
+func (this *Client) GetNest(nestID int) Nest {
+	body, status := this.api("", "nests/"+strconv.Itoa(nestID), "GET")
 	if status != 200 {
 		fmt.Print("cant get nest: " + strconv.Itoa(nestID) + " with status code: " + strconv.Itoa(status))
-		return PterodactylNest{}
+		return Nest{}
 	}
 	dec := struct {
-		Attributes PterodactylNest `json:"attributes"`
+		Attributes Nest `json:"attributes"`
 	}{}
-	if err := json.Unmarshal([]byte(body), &dec); err == nil {
+	if err := json.Unmarshal(body, &dec); err == nil {
 		return dec.Attributes
 	}
-	return PterodactylNest{}
+	return Nest{}
 }
 
-func PterodactylGetAllNests(data ParamsData) []PterodactylNest {
-	body, status := pterodactylApi(data, "", "nests/", "GET")
+func (this *Client) GetAllNests() []Nest {
+	body, status := this.api("", "nests/", "GET")
 	if status != 200 {
 		fmt.Print("cant get all nests: " + strconv.Itoa(status))
-		return []PterodactylNest{}
+		return []Nest{}
 	}
-	var ret []PterodactylNest
+	var ret []Nest
 	dec := struct {
 		data []struct {
-			Attributes PterodactylNest `json:"attributes"`
+			Attributes Nest `json:"attributes"`
 		}
 	}{}
-	if err := json.Unmarshal([]byte(body), &dec); err == nil {
+	if err := json.Unmarshal(body, &dec); err == nil {
 		for _, v := range dec.data {
 			ret = append(ret, v.Attributes)
 		}
 		return ret
 	}
-	return []PterodactylNest{}
+	return []Nest{}
 }
 
-func PterodactylGetEgg(params ParamsData, nestID int, eggID int) PterodactylEgg {
-	body, status := pterodactylApi(params, "", "nests/"+strconv.Itoa(nestID)+"/eggs/"+strconv.Itoa(eggID), "GET")
+func (this *Client) GetEgg(nestID int, eggID int) Egg {
+	body, status := this.api("", "nests/"+strconv.Itoa(nestID)+"/eggs/"+strconv.Itoa(eggID), "GET")
 	if status != 200 {
-		return PterodactylEgg{}
+		return Egg{}
 	}
 	dec := struct {
-		Attributes PterodactylEgg `json:"attributes"`
+		Attributes Egg `json:"attributes"`
 	}{}
-	if err := json.Unmarshal([]byte(body), &dec); err == nil {
+	if err := json.Unmarshal(body, &dec); err == nil {
 		return dec.Attributes
 	}
-	return PterodactylEgg{}
+	return Egg{}
 }
 
-func PterodactylGetAllEggs(data ParamsData, nestID int) []PterodactylEgg {
-	body, status := pterodactylApi(data, "", "nests/"+strconv.Itoa(nestID)+"/eggs/", "GET")
+func (this *Client) GetAllEggs(nestID int) []Egg {
+	body, status := this.api("", "nests/"+strconv.Itoa(nestID)+"/eggs/", "GET")
 	if status != 200 {
 		fmt.Print("cant get all eggs: " + strconv.Itoa(status))
-		return []PterodactylEgg{}
+		return []Egg{}
 	}
-	var ret []PterodactylEgg
+	var ret []Egg
 	dec := struct {
 		data []struct {
-			Attributes PterodactylEgg `json:"attributes"`
+			Attributes Egg `json:"attributes"`
 		}
 	}{}
-	if err := json.Unmarshal([]byte(body), &dec); err == nil {
+	if err := json.Unmarshal(body, &dec); err == nil {
 		for _, v := range dec.data {
 			ret = append(ret, v.Attributes)
 		}
 		return ret
 	}
-	return []PterodactylEgg{}
+	return []Egg{}
 }
 
-func PterodactylGetNode(data ParamsData, nodeID int) PterodactylNode {
-	body, status := pterodactylApi(data, "", "nodes/"+strconv.Itoa(nodeID), "GET")
+func (this *Client) GetNode(nodeID int) Node {
+	body, status := this.api("", "nodes/"+strconv.Itoa(nodeID), "GET")
 	if status != 200 {
-		return PterodactylNode{}
+		return Node{}
 	}
 	dec := struct {
-		Attributes PterodactylNode `json:"attributes"`
+		Attributes Node `json:"attributes"`
 	}{}
-	if err := json.Unmarshal([]byte(body), &dec); err == nil {
+	if err := json.Unmarshal(body, &dec); err == nil {
 		return dec.Attributes
 	}
-	return PterodactylNode{}
+	return Node{}
 }
 
-func PterodactylGetAllocations(data ParamsData, nodeID int) []PterodactylAllocation {
-	body, status := pterodactylApi(data, "", "nodes/"+strconv.Itoa(nodeID)+"/allocations", "GET")
+func (this *Client) GetAllocations(nodeID int) []Allocation {
+	body, status := this.api("", "nodes/"+strconv.Itoa(nodeID)+"/allocations", "GET")
 	if status != 200 {
 		fmt.Print("cant get allocations with status code: " + strconv.Itoa(status))
-		return []PterodactylAllocation{}
+		return []Allocation{}
 	}
 	dec := struct {
 		Data []struct {
-			Attributes PterodactylAllocation `json:"attributes"`
+			Attributes Allocation `json:"attributes"`
 		} `json:"data"`
 	}{}
-	var ret []PterodactylAllocation
-	if err := json.Unmarshal([]byte(body), &dec); err == nil {
+	var ret []Allocation
+	if err := json.Unmarshal(body, &dec); err == nil {
 		for _, v := range dec.Data {
 			if !v.Attributes.Assigned {
 				ret = append(ret, v.Attributes)
@@ -225,40 +218,40 @@ func PterodactylGetAllocations(data ParamsData, nodeID int) []PterodactylAllocat
 	return ret
 }
 
-func PterodactylGetServer(data ParamsData, ID interface{}, isExternal bool) PterodactylServer {
+func (this *Client) GetServer(ID interface{}, isExternal bool) Server {
 	var endPoint string
 	if isExternal {
 		endPoint = "servers/external/" + ID.(string)
 	} else {
 		endPoint = "servers/" + strconv.Itoa(ID.(int))
 	}
-	body, status := pterodactylApi(data, "", endPoint, "GET")
+	body, status := this.api("", endPoint, "GET")
 	if status != 200 {
-		return PterodactylServer{}
+		return Server{}
 	}
 	dec := struct {
-		Attributes PterodactylServer `json:"attributes"`
+		Attributes Server `json:"attributes"`
 	}{}
-	if err := json.Unmarshal([]byte(body), &dec); err == nil {
+	if err := json.Unmarshal(body, &dec); err == nil {
 		return dec.Attributes
 	} else {
 		fmt.Print(err.Error())
 	}
-	return PterodactylServer{}
+	return Server{}
 }
 
-func PterodactylGetAllServers(data ParamsData) []PterodactylServer {
-	body, status := pterodactylApi(data, "", "servers", "GET")
+func (this *Client) GetAllServers() []Server {
+	body, status := this.api("", "servers", "GET")
 	if status != 200 {
-		return []PterodactylServer{}
+		return []Server{}
 	}
 	dec := struct {
 		data []struct {
-			Attributes PterodactylServer `json:"attributes"`
+			Attributes Server `json:"attributes"`
 		}
 	}{}
-	var servers []PterodactylServer
-	if err := json.Unmarshal([]byte(body), &dec); err == nil {
+	var servers []Server
+	if err := json.Unmarshal(body, &dec); err == nil {
 		for _, v := range dec.data {
 			servers = append(servers, v.Attributes)
 		}
@@ -266,44 +259,44 @@ func PterodactylGetAllServers(data ParamsData) []PterodactylServer {
 	return servers
 }
 
-func pterodactylGetServerID(data ParamsData, serverExternalID string) int {
-	server := PterodactylGetServer(data, serverExternalID, true)
-	if server == (PterodactylServer{}) {
+func (this *Client) GetServerID(serverExternalID string) int {
+	server := this.GetServer(serverExternalID, true)
+	if server == (Server{}) {
 		return 0
 	}
 	return server.Id
 }
 
-func PterodactylSuspendServer(data ParamsData, serverExternalID string) error {
-	serverID := pterodactylGetServerID(data, serverExternalID)
+func (this *Client) SuspendServer(serverExternalID string) error {
+	serverID := this.GetServerID(serverExternalID)
 	if serverID == 0 {
 		return errors.New("suspend failed because server not found: " + strconv.Itoa(serverID))
 	}
-	_, status := pterodactylApi(data, "", "servers/"+strconv.Itoa(serverID)+"/suspend", "POST")
+	_, status := this.api("", "servers/"+strconv.Itoa(serverID)+"/suspend", "POST")
 	if status != 204 {
 		return errors.New("cant suspend server: " + strconv.Itoa(serverID) + " with status code: " + strconv.Itoa(status))
 	}
 	return nil
 }
 
-func PterodactylUnsuspendServer(data ParamsData, serverExternalID string) error {
-	serverID := pterodactylGetServerID(data, serverExternalID)
+func (this *Client) UnsuspendServer(serverExternalID string) error {
+	serverID := this.GetServerID(serverExternalID)
 	if serverID == 0 {
 		return errors.New("unsuspend failed because server not found: " + strconv.Itoa(serverID))
 	}
-	_, status := pterodactylApi(data, "", "servers/"+strconv.Itoa(serverID)+"/unsuspend", "POST")
+	_, status := this.api("", "servers/"+strconv.Itoa(serverID)+"/unsuspend", "POST")
 	if status != 204 {
 		return errors.New("cant unsuspend server: " + strconv.Itoa(serverID) + " with status code: " + strconv.Itoa(status))
 	}
 	return nil
 }
 
-func PterodactylReinstallServer(data ParamsData, serverExternalID string) error {
-	serverID := pterodactylGetServerID(data, serverExternalID)
+func (this *Client) ReinstallServer(serverExternalID string) error {
+	serverID := this.GetServerID(serverExternalID)
 	if serverID == 0 {
 		return errors.New("reinstall failed because server not found: " + strconv.Itoa(serverID))
 	}
-	_, status := pterodactylApi(data, "", "servers/"+strconv.Itoa(serverID)+"/reinstall", "POST")
+	_, status := this.api("", "servers/"+strconv.Itoa(serverID)+"/reinstall", "POST")
 	//fmt.Print(body)
 	if status != 204 {
 		return errors.New("cant reinstall server: " + strconv.Itoa(serverID) + " with status code: " + strconv.Itoa(status))
@@ -311,12 +304,12 @@ func PterodactylReinstallServer(data ParamsData, serverExternalID string) error 
 	return nil
 }
 
-func PterodactylDeleteServer(data ParamsData, serverExternalID string) error {
-	serverID := pterodactylGetServerID(data, serverExternalID)
+func (this *Client) DeleteServer(serverExternalID string) error {
+	serverID := this.GetServerID(serverExternalID)
 	if serverID == 0 {
 		return errors.New("delete failed because server not found: " + strconv.Itoa(serverID))
 	}
-	_, status := pterodactylApi(data, "", "servers/"+strconv.Itoa(serverID), "DELETE")
+	_, status := this.api("", "servers/"+strconv.Itoa(serverID), "DELETE")
 	if status != 204 {
 		return errors.New("cant delete server: " + strconv.Itoa(serverID) + " with status code: " + strconv.Itoa(status))
 	}
@@ -334,17 +327,17 @@ FirstName:  "first",
 LastName:   "last",
 })*/
 
-func PterodactylCreateUser(data ParamsData, userInfo interface{}) error {
-	body, status := pterodactylApi(data, userInfo, "users", "POST")
+func (this *Client) CreateUser(userInfo interface{}) error {
+	body, status := this.api(userInfo, "users", "POST")
 	if status != 201 {
-		return errors.New("cant create user with status code: " + strconv.Itoa(status) + " body: " + body)
+		return errors.New("cant create user with status code: " + strconv.Itoa(status) + " body: " + string(body))
 	}
 	return nil
 }
 
-func PterodactylDeleteUser(data ParamsData, externalID string) error {
-	if user, ok := pterodactylGetUser(data, externalID, true); ok {
-		_, status := pterodactylApi(data, "", "users/"+strconv.Itoa(user.Uid), "DELETE")
+func (this *Client) DeleteUser(externalID string) error {
+	if user, ok := this.GetUser(externalID, true); ok {
+		_, status := this.api("", "users/"+strconv.Itoa(user.Uid), "DELETE")
 		if status != 204 {
 			return errors.New("cant delete user: " + user.UserName + " with status code: " + strconv.Itoa(status))
 		}
@@ -354,9 +347,9 @@ func PterodactylDeleteUser(data ParamsData, externalID string) error {
 	}
 }
 
-func pterodactylGetEnv(data ParamsData, nestID int, eggID int) map[string]string {
+func (this *Client) GetEnv(nestID int, eggID int) map[string]string {
 	ret := map[string]string{}
-	body, status := pterodactylApi(data, "", "nests/"+strconv.Itoa(nestID)+"/eggs/"+strconv.Itoa(eggID)+"?include=variables", "GET")
+	body, status := this.api("", "nests/"+strconv.Itoa(nestID)+"/eggs/"+strconv.Itoa(eggID)+"?include=variables", "GET")
 	if status != 200 {
 		return map[string]string{}
 	}
@@ -369,7 +362,7 @@ func pterodactylGetEnv(data ParamsData, nestID int, eggID int) map[string]string
 			} `json:"relationships"`
 		} `json:"attributes"`
 	}{}
-	if err := json.Unmarshal([]byte(body), &dec); err == nil {
+	if err := json.Unmarshal(body, &dec); err == nil {
 		//fmt.Print(dec.Attributes.Relationships.Variables.Data)
 		for _, v := range dec.Attributes.Relationships.Variables.Data {
 			keys := v["attributes"].(map[string]interface{})
@@ -408,9 +401,9 @@ EggId:      17,
 PackId:     0,
 })*/
 
-func PterodactylCreateServer(data ParamsData, serverInfo PterodactylServer) error {
-	eggInfo := PterodactylGetEgg(data, serverInfo.NestId, serverInfo.EggId)
-	envInfo := pterodactylGetEnv(data, serverInfo.NestId, serverInfo.EggId)
+func (this *Client) CreateServer(serverInfo Server) error {
+	eggInfo := this.GetEgg(serverInfo.NestId, serverInfo.EggId)
+	envInfo := this.GetEnv(serverInfo.NestId, serverInfo.EggId)
 	postData := map[string]interface{}{
 		"name":         serverInfo.Name,
 		"user":         serverInfo.UserId,
@@ -438,7 +431,7 @@ func PterodactylCreateServer(data ParamsData, serverInfo PterodactylServer) erro
 			"default": serverInfo.Allocation,
 		},
 	}
-	body, status := pterodactylApi(data, postData, "servers", "POST")
+	body, status := this.api(postData, "servers", "POST")
 	if status == 400 {
 		return errors.New("could not find any nodes satisfying the request")
 	}
@@ -447,36 +440,36 @@ func PterodactylCreateServer(data ParamsData, serverInfo PterodactylServer) erro
 		return errors.New("failed to create the server, received the error code: " + strconv.Itoa(status))
 	}
 	var dec struct {
-		Server PterodactylServer `json:"attributes"`
+		Server Server `json:"attributes"`
 	}
-	if err := json.Unmarshal([]byte(body), &dec); err == nil {
+	if err := json.Unmarshal(body, &dec); err == nil {
 		fmt.Print("New server created: ", dec.Server)
 	} else {
 		return err
 	}
-	if dec.Server == (PterodactylServer{}) {
-		return errors.New("Pterodactyl API returns empty struct: " + body)
+	if dec.Server == (Server{}) {
+		return errors.New("Pterodactyl API returns empty struct: " + string(body))
 	}
 	return nil
 }
 
-func PterodactylUpdateServerDetail(data ParamsData, externalID string, details PostUpdateDetails) error {
-	serverID := pterodactylGetServerID(data, externalID)
+func (this *Client) UpdateServerDetail(externalID string, details PostUpdateDetails) error {
+	serverID := this.GetServerID(externalID)
 	patchData := map[string]interface{}{
 		"user":        details.UserID,
 		"description": details.Description,
 		"name":        details.ServerName,
 		"external_id": details.ExternalID,
 	}
-	_, status := pterodactylApi(data, patchData, "servers/"+strconv.Itoa(serverID)+"/details", "PATCH")
+	_, status := this.api(patchData, "servers/"+strconv.Itoa(serverID)+"/details", "PATCH")
 	if status != 200 {
 		return errors.New("cant update server details data: " + externalID)
 	}
 	return nil
 }
 
-func PterodactylUpdateServerBuild(data ParamsData, externalID string, build PostUpdateBuild) error {
-	serverID := pterodactylGetServerID(data, externalID)
+func (this *Client) UpdateServerBuild(externalID string, build PostUpdateBuild) error {
+	serverID := this.GetServerID(externalID)
 	patchData := map[string]interface{}{
 		"allocation":   build.Allocation,
 		"memory":       build.Memory,
@@ -490,27 +483,27 @@ func PterodactylUpdateServerBuild(data ParamsData, externalID string, build Post
 			"allocations": build.Allocations,
 		},
 	}
-	_, status := pterodactylApi(data, patchData, "servers/"+strconv.Itoa(serverID)+"/build", "PATCH")
+	_, status := this.api(patchData, "servers/"+strconv.Itoa(serverID)+"/build", "PATCH")
 	if status != 200 {
 		return errors.New("cant update server build data: " + externalID)
 	}
 	return nil
 }
 
-func PterodactylUpdateServerStartup(data ParamsData, externalID string, packID int) error {
-	server := PterodactylGetServer(data, externalID, true)
-	eggInfo := PterodactylGetEgg(data, server.NestId, server.EggId)
+func (this *Client) UpdateServerStartup(externalID string, packID int) error {
+	server := this.GetServer(externalID, true)
+	eggInfo := this.GetEgg(server.NestId, server.EggId)
 	patchData := map[string]interface{}{
-		"environment":  pterodactylGetEnv(data, server.NestId, server.EggId),
+		"environment":  this.GetEnv(server.NestId, server.EggId),
 		"startup":      eggInfo.StartUp,
 		"egg":          server.EggId,
 		"pack":         packID,
 		"image":        eggInfo.DockerImage,
 		"skip_scripts": false,
 	}
-	_, status := pterodactylApi(data, patchData, "servers/"+strconv.Itoa(server.Id)+"/startup", "PATCH")
+	_, status := this.api(patchData, "servers/"+strconv.Itoa(server.Id)+"/startup", "PATCH")
 	if status != 200 {
 		return errors.New("cant update server startup data: " + externalID)
 	}
-	return PterodactylReinstallServer(data, externalID)
+	return this.ReinstallServer(externalID)
 }
