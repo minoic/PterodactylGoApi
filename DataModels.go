@@ -1,4 +1,4 @@
-package pterodactylGoApi
+package PterodactylGoApi
 
 import "time"
 

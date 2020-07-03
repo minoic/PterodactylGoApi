@@ -1,4 +1,4 @@
-module github.com/MinoIC/pterodactylGoApi
+module github.com/MinoIC/PterodactylGoApi
 
 go 1.14
 
