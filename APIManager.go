@@ -25,44 +25,48 @@ func NewClient(url string, token string) *Client {
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
-func (this *Client) api(data interface{}, endPoint string, method string) ([]byte, int) {
+func (this *Client) api(data interface{}, endPoint string, method string) ([]byte, error) {
 	/* Send requests to pterodactyl panel */
 	url := this.url + "/api/application/" + endPoint
-	var res []byte
-	var status int
+	var (
+		err error
+		req *http.Request
+	)
 	if method == "POST" || method == "PATCH" {
 		ujson, err := json.Marshal(data)
 		if err != nil {
 			fmt.Print("cant marshal data:" + err.Error())
 		}
 		ubody := bytes.NewReader(ujson)
-		req, _ := http.NewRequest(method, url, ubody)
+		req, err = http.NewRequest(method, url, ubody)
+		if err != nil {
+			return nil, err
+		}
 		req.Header.Set("Authorization", "Bearer "+this.token)
 		req.Header.Set("Accept", "Application/vnd.pterodactyl.v1+json")
 		req.ContentLength = int64(len(ujson))
 		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			panic("cant Do req:" + err.Error())
-		}
-		defer resp.Body.Close()
-		body, _ := ioutil.ReadAll(resp.Body)
-		res = body
-		status = resp.StatusCode
 	} else {
-		req, _ := http.NewRequest(method, url, nil)
+		req, err = http.NewRequest(method, url, nil)
+		if err != nil {
+			return nil, err
+		}
 		req.Header.Set("Authorization", "Bearer "+this.token)
 		req.Header.Set("Accept", "Application/vnd.pterodactyl.v1+json")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			panic("cant Do req: " + err.Error())
-		}
-		defer resp.Body.Close()
-		body, _ := ioutil.ReadAll(resp.Body)
-		res = body
-		status = resp.StatusCode
 	}
-	return res, status
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		return nil, errors.New(strconv.Itoa(resp.StatusCode) + ":" + string(body))
+	}
+	return body, nil
 }
 
 func (this *Client) TestConnection() {
@@ -70,32 +74,31 @@ func (this *Client) TestConnection() {
 	fmt.Print("PterodactylAPI returns: ", test)
 }
 
-func (this *Client) GetUser(ID interface{}, isExternal bool) (User, bool) {
+func (this *Client) GetUser(ID interface{}, isExternal bool) (*User, error) {
 	var endPoint string
 	if isExternal {
 		endPoint = "users/external/" + ID.(string)
 	} else {
 		endPoint = "users/" + strconv.Itoa(ID.(int))
 	}
-	body, status := this.api("", endPoint, "GET")
-	if status == 404 || status == 400 {
-		return User{}, false
+	body, err := this.api("", endPoint, "GET")
+	if err != nil {
+		return nil, err
 	}
 	dec := struct {
 		Object     string `json:"object"`
 		Attributes User   `json:"attributes"`
 	}{}
 	if err := json.Unmarshal(body, &dec); err == nil {
-		return dec.Attributes, true
+		return &dec.Attributes, nil
 	}
-	return User{}, false
+	return nil, err
 }
 
-func (this *Client) GetAllUsers() []User {
-	body, status := this.api("", "users/", "GET")
-	if status != 200 {
-		fmt.Print("cant get all users: " + strconv.Itoa(status))
-		return []User{}
+func (this *Client) GetAllUsers() ([]User, error) {
+	body, err := this.api("", "users/", "GET")
+	if err != nil {
+		return nil, err
 	}
 	dec := struct {
 		data []struct {
@@ -108,29 +111,27 @@ func (this *Client) GetAllUsers() []User {
 			users = append(users, v.Attributes)
 		}
 	}
-	return users
+	return users, nil
 }
 
-func (this *Client) GetNest(nestID int) Nest {
-	body, status := this.api("", "nests/"+strconv.Itoa(nestID), "GET")
-	if status != 200 {
-		fmt.Print("cant get nest: " + strconv.Itoa(nestID) + " with status code: " + strconv.Itoa(status))
-		return Nest{}
+func (this *Client) GetNest(nestID int) (*Nest, error) {
+	body, err := this.api("", "nests/"+strconv.Itoa(nestID), "GET")
+	if err != nil {
+		return nil, err
 	}
 	dec := struct {
 		Attributes Nest `json:"attributes"`
 	}{}
 	if err := json.Unmarshal(body, &dec); err == nil {
-		return dec.Attributes
+		return &dec.Attributes, nil
 	}
-	return Nest{}
+	return nil, err
 }
 
-func (this *Client) GetAllNests() []Nest {
-	body, status := this.api("", "nests/", "GET")
-	if status != 200 {
-		fmt.Print("cant get all nests: " + strconv.Itoa(status))
-		return []Nest{}
+func (this *Client) GetAllNests() ([]Nest, error) {
+	body, err := this.api("", "nests/", "GET")
+	if err != nil {
+		return nil, err
 	}
 	var ret []Nest
 	dec := struct {
@@ -142,30 +143,29 @@ func (this *Client) GetAllNests() []Nest {
 		for _, v := range dec.data {
 			ret = append(ret, v.Attributes)
 		}
-		return ret
+		return ret, nil
 	}
-	return []Nest{}
+	return nil, err
 }
 
-func (this *Client) GetEgg(nestID int, eggID int) Egg {
-	body, status := this.api("", "nests/"+strconv.Itoa(nestID)+"/eggs/"+strconv.Itoa(eggID), "GET")
-	if status != 200 {
-		return Egg{}
+func (this *Client) GetEgg(nestID int, eggID int) (*Egg, error) {
+	body, err := this.api("", "nests/"+strconv.Itoa(nestID)+"/eggs/"+strconv.Itoa(eggID), "GET")
+	if err != nil {
+		return nil, err
 	}
 	dec := struct {
 		Attributes Egg `json:"attributes"`
 	}{}
 	if err := json.Unmarshal(body, &dec); err == nil {
-		return dec.Attributes
+		return &dec.Attributes, nil
 	}
-	return Egg{}
+	return nil, err
 }
 
-func (this *Client) GetAllEggs(nestID int) []Egg {
-	body, status := this.api("", "nests/"+strconv.Itoa(nestID)+"/eggs/", "GET")
-	if status != 200 {
-		fmt.Print("cant get all eggs: " + strconv.Itoa(status))
-		return []Egg{}
+func (this *Client) GetAllEggs(nestID int) ([]Egg, error) {
+	body, err := this.api("", "nests/"+strconv.Itoa(nestID)+"/eggs/", "GET")
+	if err != nil {
+		return nil, err
 	}
 	var ret []Egg
 	dec := struct {
@@ -177,30 +177,29 @@ func (this *Client) GetAllEggs(nestID int) []Egg {
 		for _, v := range dec.data {
 			ret = append(ret, v.Attributes)
 		}
-		return ret
+		return ret, err
 	}
-	return []Egg{}
+	return nil, err
 }
 
-func (this *Client) GetNode(nodeID int) Node {
-	body, status := this.api("", "nodes/"+strconv.Itoa(nodeID), "GET")
-	if status != 200 {
-		return Node{}
+func (this *Client) GetNode(nodeID int) (*Node, error) {
+	body, err := this.api("", "nodes/"+strconv.Itoa(nodeID), "GET")
+	if err != nil {
+		return nil, err
 	}
 	dec := struct {
 		Attributes Node `json:"attributes"`
 	}{}
 	if err := json.Unmarshal(body, &dec); err == nil {
-		return dec.Attributes
+		return &dec.Attributes, nil
 	}
-	return Node{}
+	return nil, err
 }
 
-func (this *Client) GetAllocations(nodeID int) []Allocation {
-	body, status := this.api("", "nodes/"+strconv.Itoa(nodeID)+"/allocations", "GET")
-	if status != 200 {
-		fmt.Print("cant get allocations with status code: " + strconv.Itoa(status))
-		return []Allocation{}
+func (this *Client) GetAllocations(nodeID int) ([]Allocation, error) {
+	body, err := this.api("", "nodes/"+strconv.Itoa(nodeID)+"/allocations", "GET")
+	if err != nil {
+		return nil, err
 	}
 	dec := struct {
 		Data []struct {
@@ -215,35 +214,35 @@ func (this *Client) GetAllocations(nodeID int) []Allocation {
 			}
 		}
 	}
-	return ret
+	return ret, nil
 }
 
-func (this *Client) GetServer(ID interface{}, isExternal bool) Server {
+func (this *Client) GetServer(ID interface{}, isExternal bool) (*Server, error) {
 	var endPoint string
 	if isExternal {
 		endPoint = "servers/external/" + ID.(string)
 	} else {
 		endPoint = "servers/" + strconv.Itoa(ID.(int))
 	}
-	body, status := this.api("", endPoint, "GET")
-	if status != 200 {
-		return Server{}
+	body, err := this.api("", endPoint, "GET")
+	if err != nil {
+		return nil, err
 	}
 	dec := struct {
 		Attributes Server `json:"attributes"`
 	}{}
 	if err := json.Unmarshal(body, &dec); err == nil {
-		return dec.Attributes
+		return &dec.Attributes, nil
 	} else {
 		fmt.Print(err.Error())
 	}
-	return Server{}
+	return nil, err
 }
 
-func (this *Client) GetAllServers() []Server {
-	body, status := this.api("", "servers", "GET")
-	if status != 200 {
-		return []Server{}
+func (this *Client) GetAllServers() ([]Server, error) {
+	body, err := this.api("", "servers", "GET")
+	if err != nil {
+		return nil, err
 	}
 	dec := struct {
 		data []struct {
@@ -256,12 +255,12 @@ func (this *Client) GetAllServers() []Server {
 			servers = append(servers, v.Attributes)
 		}
 	}
-	return servers
+	return servers, nil
 }
 
 func (this *Client) GetServerID(serverExternalID string) int {
-	server := this.GetServer(serverExternalID, true)
-	if server == (Server{}) {
+	server, err := this.GetServer(serverExternalID, true)
+	if err != nil {
 		return 0
 	}
 	return server.Id
@@ -272,11 +271,8 @@ func (this *Client) SuspendServer(serverExternalID string) error {
 	if serverID == 0 {
 		return errors.New("suspend failed because server not found: " + strconv.Itoa(serverID))
 	}
-	_, status := this.api("", "servers/"+strconv.Itoa(serverID)+"/suspend", "POST")
-	if status != 204 {
-		return errors.New("cant suspend server: " + strconv.Itoa(serverID) + " with status code: " + strconv.Itoa(status))
-	}
-	return nil
+	_, err := this.api("", "servers/"+strconv.Itoa(serverID)+"/suspend", "POST")
+	return err
 }
 
 func (this *Client) UnsuspendServer(serverExternalID string) error {
@@ -284,11 +280,8 @@ func (this *Client) UnsuspendServer(serverExternalID string) error {
 	if serverID == 0 {
 		return errors.New("unsuspend failed because server not found: " + strconv.Itoa(serverID))
 	}
-	_, status := this.api("", "servers/"+strconv.Itoa(serverID)+"/unsuspend", "POST")
-	if status != 204 {
-		return errors.New("cant unsuspend server: " + strconv.Itoa(serverID) + " with status code: " + strconv.Itoa(status))
-	}
-	return nil
+	_, err := this.api("", "servers/"+strconv.Itoa(serverID)+"/unsuspend", "POST")
+	return err
 }
 
 func (this *Client) ReinstallServer(serverExternalID string) error {
@@ -296,12 +289,8 @@ func (this *Client) ReinstallServer(serverExternalID string) error {
 	if serverID == 0 {
 		return errors.New("reinstall failed because server not found: " + strconv.Itoa(serverID))
 	}
-	_, status := this.api("", "servers/"+strconv.Itoa(serverID)+"/reinstall", "POST")
-	//fmt.Print(body)
-	if status != 204 {
-		return errors.New("cant reinstall server: " + strconv.Itoa(serverID) + " with status code: " + strconv.Itoa(status))
-	}
-	return nil
+	_, err := this.api("", "servers/"+strconv.Itoa(serverID)+"/reinstall", "POST")
+	return err
 }
 
 func (this *Client) DeleteServer(serverExternalID string) error {
@@ -309,11 +298,8 @@ func (this *Client) DeleteServer(serverExternalID string) error {
 	if serverID == 0 {
 		return errors.New("delete failed because server not found: " + strconv.Itoa(serverID))
 	}
-	_, status := this.api("", "servers/"+strconv.Itoa(serverID), "DELETE")
-	if status != 204 {
-		return errors.New("cant delete server: " + strconv.Itoa(serverID) + " with status code: " + strconv.Itoa(status))
-	}
-	return nil
+	_, err := this.api("", "servers/"+strconv.Itoa(serverID), "DELETE")
+	return err
 }
 
 /*_ = PterodactylCreateUser(params, PostPteUser{
@@ -328,30 +314,24 @@ LastName:   "last",
 })*/
 
 func (this *Client) CreateUser(userInfo interface{}) error {
-	body, status := this.api(userInfo, "users", "POST")
-	if status != 201 {
-		return errors.New("cant create user with status code: " + strconv.Itoa(status) + " body: " + string(body))
-	}
-	return nil
+	_, err := this.api(userInfo, "users", "POST")
+	return err
 }
 
 func (this *Client) DeleteUser(externalID string) error {
-	if user, ok := this.GetUser(externalID, true); ok {
-		_, status := this.api("", "users/"+strconv.Itoa(user.Uid), "DELETE")
-		if status != 204 {
-			return errors.New("cant delete user: " + user.UserName + " with status code: " + strconv.Itoa(status))
-		}
-		return nil
+	if user, err := this.GetUser(externalID, true); err == nil {
+		_, err2 := this.api("", "users/"+strconv.Itoa(user.Uid), "DELETE")
+		return err2
 	} else {
-		return errors.New("cant get user")
+		return err
 	}
 }
 
-func (this *Client) GetEnv(nestID int, eggID int) map[string]string {
+func (this *Client) GetEnv(nestID int, eggID int) (map[string]string, error) {
 	ret := map[string]string{}
-	body, status := this.api("", "nests/"+strconv.Itoa(nestID)+"/eggs/"+strconv.Itoa(eggID)+"?include=variables", "GET")
-	if status != 200 {
-		return map[string]string{}
+	body, err := this.api("", "nests/"+strconv.Itoa(nestID)+"/eggs/"+strconv.Itoa(eggID)+"?include=variables", "GET")
+	if err != nil {
+		return nil, err
 	}
 	dec := struct {
 		Attributes struct {
@@ -363,7 +343,7 @@ func (this *Client) GetEnv(nestID int, eggID int) map[string]string {
 		} `json:"attributes"`
 	}{}
 	if err := json.Unmarshal(body, &dec); err == nil {
-		//fmt.Print(dec.Attributes.Relationships.Variables.Data)
+		// fmt.Print(dec.Attributes.Relationships.Variables.Data)
 		for _, v := range dec.Attributes.Relationships.Variables.Data {
 			keys := v["attributes"].(map[string]interface{})
 			key := keys["env_variable"].(string)
@@ -375,7 +355,7 @@ func (this *Client) GetEnv(nestID int, eggID int) map[string]string {
 	} else {
 		fmt.Print(err.Error())
 	}
-	return ret
+	return ret, nil
 }
 
 /*_ = PterodactylCreateServer(params, PterodactylServer{
@@ -402,8 +382,14 @@ PackId:     0,
 })*/
 
 func (this *Client) CreateServer(serverInfo Server) error {
-	eggInfo := this.GetEgg(serverInfo.NestId, serverInfo.EggId)
-	envInfo := this.GetEnv(serverInfo.NestId, serverInfo.EggId)
+	eggInfo, err := this.GetEgg(serverInfo.NestId, serverInfo.EggId)
+	if err != nil {
+		return err
+	}
+	envInfo, err := this.GetEnv(serverInfo.NestId, serverInfo.EggId)
+	if err != nil {
+		return err
+	}
 	postData := map[string]interface{}{
 		"name":         serverInfo.Name,
 		"user":         serverInfo.UserId,
@@ -431,13 +417,9 @@ func (this *Client) CreateServer(serverInfo Server) error {
 			"default": serverInfo.Allocation,
 		},
 	}
-	body, status := this.api(postData, "servers", "POST")
-	if status == 400 {
-		return errors.New("could not find any nodes satisfying the request")
-	}
-	if status != 201 {
-		fmt.Print(body)
-		return errors.New("failed to create the server, received the error code: " + strconv.Itoa(status))
+	body, err := this.api(postData, "servers", "POST")
+	if err != nil {
+		return err
 	}
 	var dec struct {
 		Server Server `json:"attributes"`
@@ -461,11 +443,8 @@ func (this *Client) UpdateServerDetail(externalID string, details PostUpdateDeta
 		"name":        details.ServerName,
 		"external_id": details.ExternalID,
 	}
-	_, status := this.api(patchData, "servers/"+strconv.Itoa(serverID)+"/details", "PATCH")
-	if status != 200 {
-		return errors.New("cant update server details data: " + externalID)
-	}
-	return nil
+	_, err := this.api(patchData, "servers/"+strconv.Itoa(serverID)+"/details", "PATCH")
+	return err
 }
 
 func (this *Client) UpdateServerBuild(externalID string, build PostUpdateBuild) error {
@@ -483,16 +462,19 @@ func (this *Client) UpdateServerBuild(externalID string, build PostUpdateBuild) 
 			"allocations": build.Allocations,
 		},
 	}
-	_, status := this.api(patchData, "servers/"+strconv.Itoa(serverID)+"/build", "PATCH")
-	if status != 200 {
-		return errors.New("cant update server build data: " + externalID)
-	}
-	return nil
+	_, err := this.api(patchData, "servers/"+strconv.Itoa(serverID)+"/build", "PATCH")
+	return err
 }
 
 func (this *Client) UpdateServerStartup(externalID string, packID int) error {
-	server := this.GetServer(externalID, true)
-	eggInfo := this.GetEgg(server.NestId, server.EggId)
+	server, err := this.GetServer(externalID, true)
+	if err != nil {
+		return err
+	}
+	eggInfo, err := this.GetEgg(server.NestId, server.EggId)
+	if err != nil {
+		return err
+	}
 	patchData := map[string]interface{}{
 		"environment":  this.GetEnv(server.NestId, server.EggId),
 		"startup":      eggInfo.StartUp,
@@ -501,9 +483,6 @@ func (this *Client) UpdateServerStartup(externalID string, packID int) error {
 		"image":        eggInfo.DockerImage,
 		"skip_scripts": false,
 	}
-	_, status := this.api(patchData, "servers/"+strconv.Itoa(server.Id)+"/startup", "PATCH")
-	if status != 200 {
-		return errors.New("cant update server startup data: " + externalID)
-	}
-	return this.ReinstallServer(externalID)
+	_, err = this.api(patchData, "servers/"+strconv.Itoa(server.Id)+"/startup", "PATCH")
+	return err
 }
