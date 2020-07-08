@@ -475,8 +475,12 @@ func (this *Client) UpdateServerStartup(externalID string, packID int) error {
 	if err != nil {
 		return err
 	}
+	env, err := this.GetEnv(server.NestId, server.EggId)
+	if err != nil {
+		return err
+	}
 	patchData := map[string]interface{}{
-		"environment":  this.GetEnv(server.NestId, server.EggId),
+		"environment":  env,
 		"startup":      eggInfo.StartUp,
 		"egg":          server.EggId,
 		"pack":         packID,
