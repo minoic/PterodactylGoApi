@@ -25,6 +25,10 @@ func NewClient(url string, token string) *Client {
 	return &Client{url: url, token: token}
 }
 
+func (this *Client) HostName() string {
+	return this.url
+}
+
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func (this *Client) api(data interface{}, endPoint string, method string) ([]byte, error) {
