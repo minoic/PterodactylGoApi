@@ -10,6 +10,7 @@ import (
 	"strconv"
 )
 
+//  Pterodactyl API client
 type Client struct {
 	/* ServerHostname = "http://xxx.example.com" */
 	url string
@@ -17,6 +18,7 @@ type Client struct {
 	token string
 }
 
+// initial a new client instance
 func NewClient(url string, token string) *Client {
 	for stringLen := len(url); url[stringLen-1] == '/'; stringLen -= 1 {
 	}
