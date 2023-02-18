@@ -66,7 +66,6 @@ func (this *Client) api(data interface{}, endPoint string, method string) ([]byt
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
-	fmt.Println(string(body))
 	if err != nil {
 		return nil, err
 	}
