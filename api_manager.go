@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	jsoniter "github.com/json-iterator/go"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strconv"
 )
@@ -65,7 +65,8 @@ func (this *Client) api(data interface{}, endPoint string, method string) ([]byt
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	fmt.Println(string(body))
 	if err != nil {
 		return nil, err
 	}
@@ -107,13 +108,13 @@ func (this *Client) GetAllUsers() ([]User, error) {
 		return nil, err
 	}
 	dec := struct {
-		data []struct {
+		Data []struct {
 			Attributes User `json:"attributes"`
-		}
+		} `json:"data"`
 	}{}
 	var users []User
 	if err := json.Unmarshal(body, &dec); err == nil {
-		for _, v := range dec.data {
+		for _, v := range dec.Data {
 			users = append(users, v.Attributes)
 		}
 	}
@@ -141,12 +142,12 @@ func (this *Client) GetAllNests() ([]Nest, error) {
 	}
 	var ret []Nest
 	dec := struct {
-		data []struct {
+		Data []struct {
 			Attributes Nest `json:"attributes"`
-		}
+		} `json:"data"`
 	}{}
 	if err := json.Unmarshal(body, &dec); err == nil {
-		for _, v := range dec.data {
+		for _, v := range dec.Data {
 			ret = append(ret, v.Attributes)
 		}
 		return ret, nil
@@ -175,12 +176,12 @@ func (this *Client) GetAllEggs(nestID int) ([]Egg, error) {
 	}
 	var ret []Egg
 	dec := struct {
-		data []struct {
+		Data []struct {
 			Attributes Egg `json:"attributes"`
-		}
+		} `json:"data"`
 	}{}
 	if err := json.Unmarshal(body, &dec); err == nil {
-		for _, v := range dec.data {
+		for _, v := range dec.Data {
 			ret = append(ret, v.Attributes)
 		}
 		return ret, err
@@ -251,13 +252,13 @@ func (this *Client) GetAllServers() ([]Server, error) {
 		return nil, err
 	}
 	dec := struct {
-		data []struct {
+		Data []struct {
 			Attributes Server `json:"attributes"`
-		}
+		} `json:"data"`
 	}{}
 	var servers []Server
 	if err := json.Unmarshal(body, &dec); err == nil {
-		for _, v := range dec.data {
+		for _, v := range dec.Data {
 			servers = append(servers, v.Attributes)
 		}
 	}
